@@ -1,0 +1,465 @@
+// ChicChinChinese — Single-file React app (fixed)
+// Purpose: single-file React component. No Markdown or fenced code blocks.
+// Fixes applied:
+// 1) Removed leading Markdown that caused a SyntaxError.
+// 2) Fixed CSV parsing and newline handling (use /\r?\n/).
+// 3) Fixed CSV formatting to use '\n'.
+// 4) Avoid reading localStorage at module-evaluation time (load on mount instead).
+// 5) Safer normalization of CSV columns to avoid calling .trim() on undefined.
+
+import React, { useState, useEffect } from 'react';
+
+// Theme colors
+const COLORS = {
+  darkMaroonBg: '#3a0a0a',
+  darkMaroonText: '#4b0e0e',
+  deepMaroon: '#2b0505',
+  pastelYellow: '#fef9e7',
+  accentYellow: '#f7e19c',
+};
+
+// Simple CSV parser (expects well-formed simple CSV). Handles CRLF or LF newlines.
+function parseCSV(text) {
+  if (!text) return { header: [], rows: [] };
+  // Normalize newlines and split
+  const lines = text.trim().split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lines.length === 0) return { header: [], rows: [] };
+  const header = lines[0].split(',').map(h => h.trim());
+  const rows = lines.slice(1).map(line => {
+    // naive split by comma (does not fully support quoted commas)
+    const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    const obj = {};
+    header.forEach((h, i) => { obj[h] = cols[i] ?? ''; });
+    return obj;
+  });
+  return { header, rows };
+}
+
+function formatCSV(rows, header) {
+  const h = header.join(',');
+  const lines = rows.map(r => header.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(','));
+  return [h, ...lines].join('\n');
+}
+
+// Demo data used as fallback
+const DEMO_DATA = {
+  HSK1: [
+    { chinese: '你', pinyin: 'nǐ', thai: 'คุณ', english: 'you' },
+    { chinese: '好', pinyin: 'hǎo', thai: 'ดี', english: 'good' },
+    { chinese: '谢谢', pinyin: 'xièxie', thai: 'ขอบคุณ', english: 'thank you' },
+  ],
+  HSK2: [],
+  HSK3: [],
+  HSK4: [],
+  HSK5: [],
+  HSK6: [],
+  HSKK: [],
+  Business: [],
+  Travel: [],
+};
+
+const LS_KEY = 'chicchinchinese_vocab_v1';
+
+function safeLoadFromLocal() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load localStorage data', e);
+    return null;
+  }
+}
+
+function safeSaveToLocal(data) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('Failed to save to localStorage', e);
+  }
+}
+
+// Nav component
+function Nav({ route, setRoute }) {
+  const items = [
+    { key: 'home', label: 'Home' },
+    { key: 'courses', label: 'Courses' },
+    { key: 'vocab', label: 'Vocab Library' },
+    { key: 'useful', label: 'Useful Vocab' },
+    { key: 'about', label: 'About' },
+    { key: 'contact', label: 'Contact' },
+  ];
+
+  return (
+    <nav style={{ background: COLORS.darkMaroonBg, color: COLORS.pastelYellow }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ width: 48, height: 48, borderRadius: 8, background: COLORS.deepMaroon, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>CC</div>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>ChicChinChinese</div>
+            <div style={{ fontSize: 12 }}>HSK • HSKK • Business • Travel</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {items.map(i => (
+            <button
+              key={i.key}
+              onClick={() => setRoute(i.key)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 6,
+                background: route === i.key ? COLORS.deepMaroon : 'transparent',
+                color: route === i.key ? COLORS.pastelYellow : COLORS.darkMaroonText,
+                border: `1px solid ${COLORS.deepMaroon}`,
+              }}
+            >
+              {i.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function Hero({ onCTAClick }) {
+  return (
+    <div style={{ background: COLORS.pastelYellow, padding: 36, borderBottom: `6px solid ${COLORS.deepMaroon}` }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', gap: 20, alignItems: 'center' }}>
+        <div style={{ flex: 1 }}>
+          <h1 style={{ color: COLORS.deepMaroon, fontSize: 34, margin: 0 }}>ChicChinChinese — เรียนจีนมั่นใจ มีตัวตน</h1>
+          <p style={{ color: COLORS.darkMaroonText }}>คอร์สออกแบบสำหรับนักเรียนไทย — ครอบคลุม HSK1–6, HSKK, ภาษาจีนเพื่อธุรกิจ และภาษาจีนเพื่อการเดินทาง</p>
+          <div style={{ marginTop: 12 }}>
+            <button onClick={() => onCTAClick('courses')} style={{ padding: '10px 16px', borderRadius: 8, background: COLORS.deepMaroon, color: COLORS.pastelYellow, marginRight: 8 }}>เริ่มเรียน</button>
+            <button onClick={() => onCTAClick('vocab')} style={{ padding: '10px 16px', borderRadius: 8, border: `1px solid ${COLORS.deepMaroon}`, background: 'transparent' }}>ดูคำศัพท์</button>
+          </div>
+        </div>
+        <div style={{ width: 340, background: 'white', padding: 16, borderRadius: 12, boxShadow: '0 6px 18px rgba(0,0,0,0.08)' }}>
+          <h3 style={{ marginTop: 0, color: COLORS.deepMaroon }}>ทำไมต้องเรา</h3>
+          <ul style={{ color: COLORS.darkMaroonText }}>
+            <li>เข้าใจบริบทผู้เรียนไทย</li>
+            <li>กลุ่มคำศัพท์ครบถ้วนสำหรับทุกระดับ</li>
+            <li>การันตีความคืบหน้าและชุมชนผู้เรียน</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Courses({ onOpenLevel }) {
+  const courseData = [
+    { id: 'HSK1', title: 'HSK 1', desc: 'พื้นฐานคำศัพท์และประโยคที่ใช้จริง', level: 1 },
+    { id: 'HSK2', title: 'HSK 2', desc: 'ขยายคำศัพท์และแกรมมาร์ระดับต้น', level: 2 },
+    { id: 'HSK3', title: 'HSK 3', desc: 'สื่อสารราบรื่นในสถานการณ์ทั่วไป', level: 3 },
+    { id: 'HSK4', title: 'HSK 4', desc: 'การใช้งานเชิงลึกและอ่านเขียน', level: 4 },
+    { id: 'HSK5', title: 'HSK 5', desc: 'ความเข้าใจวัฒนธรรมและธุรกิจ', level: 5 },
+    { id: 'HSK6', title: 'HSK 6', desc: 'ความชำนาญทางภาษา', level: 6 },
+    { id: 'HSKK', title: 'HSKK (Speaking)', desc: 'ฝึกพูดสำหรับ HSKK', level: 'HSKK' },
+    { id: 'Business', title: 'Chinese for Business', desc: 'คำศัพท์และตัวอย่างบริบทธุรกิจ', level: 'Biz' },
+    { id: 'Travel', title: 'Chinese for Travel', desc: 'ประโยค-คำศัพท์ที่จำเป็นระหว่างเดินทาง', level: 'Travel' },
+  ];
+
+  return (
+    <section style={{ maxWidth: 1200, margin: '24px auto', padding: 16 }}>
+      <h2 style={{ color: COLORS.deepMaroon }}>Courses</h2>
+      <p style={{ color: COLORS.darkMaroonText }}>เลือกคอร์สที่ตรงกับเป้าหมายของคุณ</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginTop: 12 }}>
+        {courseData.map(c => (
+          <article key={c.id} style={{ padding: 12, borderRadius: 10, background: 'white', boxShadow: '0 6px 18px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: COLORS.deepMaroon }}>{c.title}</h3>
+              <div style={{ color: COLORS.darkMaroonText }}>Level {c.level}</div>
+            </div>
+            <p style={{ color: COLORS.darkMaroonText }}>{c.desc}</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => onOpenLevel(c.id)} style={{ padding: '8px 10px', borderRadius: 8, background: COLORS.deepMaroon, color: COLORS.pastelYellow }}>เปิดคำศัพท์</button>
+              <button style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${COLORS.deepMaroon}`, background: 'transparent' }}>รายละเอียด</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function VocabLibrary({ data, setData }) {
+  const levels = Object.keys(data);
+  const [selection, setSelection] = useState(levels[0] || 'HSK1');
+  const list = data[selection] || [];
+
+  function handleFileUpload(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const { rows } = parseCSV(String(ev.target.result || ''));
+        const normalized = rows.map(r => {
+          const c = (r.chinese || r.Chinese || r.CHINESE || '').trim();
+          const p = (r.pinyin || r.Pinyin || '').trim();
+          const t = (r.thai || r.Thai || '').trim();
+          const eWord = (r.english || r.English || r.en || '').trim();
+          return { chinese: c, pinyin: p, thai: t, english: eWord };
+        });
+        setData(prev => ({ ...prev, [selection]: normalized }));
+        safeSaveToLocal({ ...safeLoadFromLocal(), [selection]: normalized } || { ...DEMO_DATA, [selection]: normalized });
+        alert(`Imported ${normalized.length} items into ${selection}`);
+      } catch (err) {
+        console.error(err);
+        alert('Failed to parse CSV — ensure header includes chinese,pinyin,thai,english');
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  function exportSelection() {
+    const header = ['chinese', 'pinyin', 'thai', 'english'];
+    const csv = formatCSV(list, header);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selection}_vocab.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section style={{ maxWidth: 1200, margin: '24px auto', padding: 16 }}>
+      <h2 style={{ color: COLORS.deepMaroon }}>Vocab Library</h2>
+      <p style={{ color: COLORS.darkMaroonText }}>อัปโหลดไฟล์ CSV เพื่อเติมคำศัพท์เต็มสำหรับแต่ละระดับ (header: chinese,pinyin,thai,english)</p>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        {levels.map(l => (
+          <button key={l} onClick={() => setSelection(l)} style={{ padding: '8px 10px', borderRadius: 8, background: selection === l ? COLORS.deepMaroon : 'transparent', color: selection === l ? COLORS.pastelYellow : COLORS.darkMaroonText, border: `1px solid ${COLORS.deepMaroon}` }}>{l}</button>
+        ))}
+      </div>
+      <div style={{ marginTop: 12, background: 'white', padding: 12, borderRadius: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <strong style={{ color: COLORS.deepMaroon }}>{selection}</strong>
+            <div style={{ color: COLORS.darkMaroonText }}>{list.length} words</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label style={{ padding: '8px 12px', borderRadius: 8, border: `1px dashed ${COLORS.deepMaroon}`, cursor: 'pointer' }}>
+              Upload CSV
+              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileUpload} />
+            </label>
+            <button onClick={exportSelection} style={{ padding: '8px 12px', borderRadius: 8, background: COLORS.deepMaroon, color: COLORS.pastelYellow }}>Download CSV</button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+          {list.slice(0, 200).map((v, idx) => (
+            <div key={idx} style={{ padding: 10, borderRadius: 8, border: '1px solid #eee' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.deepMaroon }}>{v.chinese}</div>
+              <div style={{ color: COLORS.darkMaroonText }}>{v.pinyin}</div>
+              <div style={{ color: COLORS.darkMaroonText, marginTop: 6 }}>{v.thai} — <span style={{ color: '#6b2e2e' }}>{v.english}</span></div>
+            </div>
+          ))}
+          {list.length === 0 && <div style={{ color: COLORS.darkMaroonText }}>No words in this level yet — upload a CSV or let us populate it for you.</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function UsefulVocab({ usefulData, setUsefulData }) {
+  const cats = Object.keys(usefulData || {});
+  const [cat, setCat] = useState(cats[0] || 'Travel');
+  const list = usefulData[cat] || [];
+
+  function uploadCat(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const { rows } = parseCSV(String(ev.target.result || ''));
+        const normalized = rows.map(r => ({ chinese: (r.chinese || '').trim(), pinyin: (r.pinyin || '').trim(), thai: (r.thai || '').trim(), english: (r.english || '').trim() }));
+        setUsefulData(prev => ({ ...prev, [cat]: normalized }));
+        safeSaveToLocal({ ...safeLoadFromLocal(), [cat]: normalized } || {});
+        alert(`Imported ${normalized.length} items into ${cat}`);
+      } catch (err) {
+        console.error(err);
+        alert('Failed to parse CSV');
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  function downloadCat() {
+    const header = ['chinese', 'pinyin', 'thai', 'english'];
+    const csv = formatCSV(list, header);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${cat}_useful.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section style={{ maxWidth: 1200, margin: '24px auto', padding: 16 }}>
+      <h2 style={{ color: COLORS.deepMaroon }}>Useful Vocab</h2>
+      <p style={{ color: COLORS.darkMaroonText }}>คำศัพท์แยกตามหมวดใช้งานจริง</p>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        {cats.map(c => (
+          <button key={c} onClick={() => setCat(c)} style={{ padding: '8px 10px', borderRadius: 8, background: cat === c ? COLORS.deepMaroon : 'transparent', color: cat === c ? COLORS.pastelYellow : COLORS.darkMaroonText, border: `1px solid ${COLORS.deepMaroon}` }}>{c}</button>
+        ))}
+      </div>
+      <div style={{ marginTop: 12, background: 'white', padding: 12, borderRadius: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div><strong style={{ color: COLORS.deepMaroon }}>{cat}</strong> <div style={{ color: COLORS.darkMaroonText }}>{list.length} words</div></div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label style={{ padding: '8px 12px', borderRadius: 8, border: `1px dashed ${COLORS.deepMaroon}`, cursor: 'pointer' }}>
+              Upload CSV
+              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={uploadCat} />
+            </label>
+            <button onClick={downloadCat} style={{ padding: '8px 12px', borderRadius: 8, background: COLORS.deepMaroon, color: COLORS.pastelYellow }}>Download CSV</button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+          {list.map((v, idx) => (
+            <div key={idx} style={{ padding: 10, borderRadius: 8, border: '1px solid #eee' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.deepMaroon }}>{v.chinese}</div>
+              <div style={{ color: COLORS.darkMaroonText }}>{v.pinyin}</div>
+              <div style={{ marginTop: 6, color: COLORS.darkMaroonText }}>{v.thai} — {v.english}</div>
+            </div>
+          ))}
+          {list.length === 0 && <div style={{ color: COLORS.darkMaroonText }}>No items in this category yet.</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function About({ teacher }) {
+  return (
+    <section style={{ maxWidth: 1200, margin: '24px auto', padding: 16 }}>
+      <h2 style={{ color: COLORS.deepMaroon }}>About ChicChinChinese</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div style={{ background: 'white', padding: 12, borderRadius: 8 }}>
+          <h3 style={{ color: COLORS.deepMaroon }}>Mission</h3>
+          <p style={{ color: COLORS.darkMaroonText }}>สร้างความมั่นใจให้ผู้เรียนไทยในการใช้ภาษาจีน ทั้งเพื่อการศึกษา การทำงาน และการเดินทาง</p>
+        </div>
+        <div style={{ background: 'white', padding: 12, borderRadius: 8 }}>
+          <h3 style={{ color: COLORS.deepMaroon }}>Teacher</h3>
+          <p style={{ color: COLORS.darkMaroonText }}>{teacher.name} — {teacher.bio}</p>
+          <ul style={{ color: COLORS.darkMaroonText }}>
+            <li>7+ ปีสอนจีน</li>
+            <li>HSK & Business Chinese experience</li>
+          </ul>
+        </div>
+        <div style={{ background: 'white', padding: 12, borderRadius: 8 }}>
+          <h3 style={{ color: COLORS.deepMaroon }}>Community</h3>
+          <p style={{ color: COLORS.darkMaroonText }}>ชุมชนผู้เรียนที่ช่วยกันฝึกและแลกเปลี่ยนทรัพยากร</p>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, background: 'white', padding: 12, borderRadius: 8 }}>
+        <h3 style={{ color: COLORS.deepMaroon }}>Testimonials</h3>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <blockquote style={{ padding: 8, border: '1px solid #eee', borderRadius: 8 }}>
+            "เรียนกับ Noey แล้วพูดจีนได้จริง" — นักศึกษา A
+          </blockquote>
+          <blockquote style={{ padding: 8, border: '1px solid #eee', borderRadius: 8 }}>
+            "คำศัพท์ใช้ง่ายตอนไปเที่ยวจีน" — นักท่องเที่ยว B
+          </blockquote>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Contact() {
+  return (
+    <section style={{ maxWidth: 1200, margin: '24px auto', padding: 16 }}>
+      <h2 style={{ color: COLORS.deepMaroon }}>Contact & Enrollment</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <form onSubmit={(e) => { e.preventDefault(); alert('Demo form submitted — add backend to collect leads.'); }} style={{ background: 'white', padding: 12, borderRadius: 8 }}>
+          <label style={{ display: 'block', marginBottom: 6 }}>Name</label>
+          <input required style={{ width: '100%', padding: 8, marginBottom: 8 }} />
+          <label style={{ display: 'block', marginBottom: 6 }}>Email / LINE</label>
+          <input required style={{ width: '100%', padding: 8, marginBottom: 8 }} />
+          <label style={{ display: 'block', marginBottom: 6 }}>Message</label>
+          <textarea style={{ width: '100%', padding: 8 }} rows={4} />
+          <div style={{ marginTop: 8 }}>
+            <button style={{ padding: '10px 14px', background: COLORS.deepMaroon, color: COLORS.pastelYellow, borderRadius: 8 }}>Send</button>
+          </div>
+        </form>
+
+        <div style={{ background: 'white', padding: 12, borderRadius: 8 }}>
+          <h3 style={{ color: COLORS.deepMaroon }}>Office</h3>
+          <p style={{ color: COLORS.darkMaroonText }}>Bangkok — in-person on request. Online classes available globally.</p>
+          <h4 style={{ color: COLORS.deepMaroon }}>Policy</h4>
+          <p style={{ color: COLORS.darkMaroonText }}>Trial lesson free. Refunds within 48 hours before class.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default function App() {
+  const [route, setRoute] = useState('home');
+  const [data, setData] = useState(DEMO_DATA);
+  const [usefulData, setUsefulData] = useState({ Travel: [], Dining: [], BusinessBasic: [] });
+
+  // Load saved data from localStorage once on mount
+  useEffect(() => {
+    const saved = safeLoadFromLocal();
+    if (saved) {
+      // Merge with DEMO_DATA to ensure keys exist
+      setData(prev => ({ ...DEMO_DATA, ...saved }));
+    }
+  }, []);
+
+  // Persist whenever data changes
+  useEffect(() => { safeSaveToLocal(data); }, [data]);
+
+  return (
+    <div style={{ minHeight: '100vh', background: COLORS.pastelYellow, color: COLORS.darkMaroonText, fontFamily: 'Inter, sans-serif' }}>
+      <Nav route={route} setRoute={setRoute} />
+
+      {route === 'home' && (
+        <>
+          <Hero onCTAClick={(r) => setRoute(r)} />
+          <Courses onOpenLevel={(id) => { setRoute('vocab'); }} />
+          <UsefulVocab usefulData={usefulData} setUsefulData={setUsefulData} />
+          <About teacher={{ name: 'Noey', bio: 'ครูผู้มีประสบการณ์สอนภาษาจีนให้คนไทย' }} />
+          <Contact />
+        </>
+      )}
+
+      {route === 'courses' && (
+        <Courses onOpenLevel={(id) => { setRoute('vocab'); }} />
+      )}
+
+      {route === 'vocab' && (
+        <VocabLibrary data={data} setData={setData} />
+      )}
+
+      {route === 'useful' && (
+        <UsefulVocab usefulData={usefulData} setUsefulData={setUsefulData} />
+      )}
+
+      {route === 'about' && (
+        <About teacher={{ name: 'Noey', bio: 'ครูผู้มีประสบการณ์สอนภาษาจีนให้คนไทย' }} />
+      )}
+
+      {route === 'contact' && (
+        <Contact />
+      )}
+
+      <footer style={{ background: COLORS.darkMaroonBg, color: COLORS.pastelYellow, padding: 20, marginTop: 24 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>ChicChinChinese</div>
+            <div style={{ fontSize: 12 }}>Build confidence. Speak Chinese. Connect to China.</div>
+          </div>
+          <div style={{ fontSize: 12 }}>© {new Date().getFullYear()} ChicChinChinese</div>
+        </div>
+      </footer>
+    </div>
+  );
+}
